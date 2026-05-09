@@ -1,0 +1,27 @@
+const express = require('express');
+const cors = require('cors');
+require('dotenv').config();
+const app = express();
+app.use(cors());
+app.use(express.json());
+app.get('/', (req, res) => {
+  res.json({ product: 'EcoNexus', tagline: 'AI Agents That Coordinate Circular Agricultural Deals in Real Time', status: 'running', version: '1.0.0' });
+});
+const farmerRoutes = require('./routes/farmerRoutes');
+const adminRoutes = require('./routes/adminRoutes');
+const buyerRoutes = require('./routes/buyerRoutes');
+const listingRoutes = require('./routes/listingRoutes');
+const matchingRoutes = require('./routes/matchingRoutes');
+const negotiationRoutes = require('./routes/negotiationRoutes');
+const approvalRoutes = require('./routes/approvalRoutes');
+const demoRoutes = require('./routes/demoRoutes');
+app.use('/api/farmers', farmerRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/buyers', buyerRoutes);
+app.use('/api/listings', listingRoutes);
+app.use('/api/matching', matchingRoutes);
+app.use('/api/negotiations', negotiationRoutes);
+app.use('/api/approval', approvalRoutes);
+app.use('/api/demo', demoRoutes);
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => { console.log(`EcoNexus backend running on port ${PORT}`); });
