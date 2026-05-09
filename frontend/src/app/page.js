@@ -86,6 +86,7 @@ export default function App() {
     listing: <ListingScreen setScreen={setScreen} />,
     agent: <AgentScreen setScreen={setScreen} />,
     negotiate: <NegotiateScreen setScreen={setScreen} />,
+    demo: <PrdDemoScreen setScreen={setScreen} />,
     approve: <ApproveScreen setScreen={setScreen} />,
     deal: <DealScreen setScreen={setScreen} />,
   };
@@ -107,6 +108,7 @@ export default function App() {
           { id: 'listing', icon: '＋', label: 'List Crop' },
           { id: 'agent', icon: '◈', label: 'Agents' },
           { id: 'negotiate', icon: 'LIVE', label: 'Live Deal' },
+          { id: 'demo', icon: 'PRD', label: 'Demo' },
         ].map(item => (
           <button key={item.id} onClick={() => setScreen(item.id)}
             className={`flex flex-col items-center gap-1 text-xs transition-all ${screen === item.id ? 'text-[#00ff88]' : 'text-white/30'}`}>
@@ -206,6 +208,10 @@ function Dashboard({ data, loading, time, setScreen, installState, isInstalled, 
           className="w-full border border-[#00d4ff]/60 bg-[#00d4ff]/[0.04] text-[#00d4ff] py-4 text-sm tracking-widest hover:bg-[#00d4ff]/10 transition-all">
           START LIVE NEGOTIATION DEMO
         </button>
+        <button onClick={() => setScreen('demo')}
+          className="w-full border border-[#ffaa00]/60 bg-[#ffaa00]/[0.04] text-[#ffaa00] py-4 text-sm tracking-widest hover:bg-[#ffaa00]/10 transition-all">
+          OPEN COMPLETE PRD DEMO
+        </button>
         <button onClick={() => setScreen('listing')}
           className="w-full border border-[#00ff88]/50 text-[#00ff88] py-4 text-sm tracking-widest hover:bg-[#00ff88]/10 transition-all">
           + POST NEW CROP LISTING
@@ -234,6 +240,275 @@ function InstallButton({ installState, isInstalled, onInstall }) {
     >
       {label}
     </button>
+  );
+}
+
+function PrdDemoScreen({ setScreen }) {
+  const [active, setActive] = useState('overview');
+  const [overview, setOverview] = useState(null);
+  const [outputs, setOutputs] = useState({});
+  const [loadingKey, setLoadingKey] = useState('');
+
+  const modules = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'farmer', label: 'Farmer' },
+    { id: 'buyer', label: 'Buyer' },
+    { id: 'semantic', label: 'Match' },
+    { id: 'aggregation', label: 'Aggregate' },
+    { id: 'logistics', label: 'Logistics' },
+    { id: 'redistribution', label: 'Circular' },
+    { id: 'community', label: 'Community' },
+    { id: 'voice', label: 'Voice' },
+  ];
+
+  useEffect(() => {
+    runAction('overview', '/demo/overview');
+  }, []);
+
+  const runAction = async (key, path, body) => {
+    setLoadingKey(key);
+    try {
+      const options = body
+        ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+        : {};
+      const res = await fetch(`${API}${path}`, options);
+      const data = await res.json();
+      if (key === 'overview') setOverview(data);
+      setOutputs(prev => ({ ...prev, [key]: data }));
+    } catch (e) {
+      setOutputs(prev => ({ ...prev, [key]: { success: false, message: e.message || 'Request failed' } }));
+    } finally {
+      setLoadingKey('');
+    }
+  };
+
+  return (
+    <div className="flex-1 pb-24 slide-up">
+      <div className="px-5 pt-6 pb-4 border-b border-white/10">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-[#ffaa00] text-xs tracking-widest">COMPLETE PRD DEMO</p>
+            <p className="text-white/30 text-xs mt-1">EcoNexus modules ready for jury walkthrough</p>
+          </div>
+          <button onClick={() => setScreen('negotiate')}
+            className="border border-[#00d4ff]/40 px-3 py-2 text-[10px] tracking-widest text-[#00d4ff]">
+            LIVE DEAL
+          </button>
+        </div>
+      </div>
+
+      <div className="px-5 pt-4">
+        <div className="flex gap-2 overflow-x-auto pb-3 mb-4">
+          {modules.map(m => (
+            <button key={m.id} onClick={() => setActive(m.id)}
+              className={`shrink-0 border px-3 py-2 text-[10px] tracking-widest ${active === m.id ? 'border-[#ffaa00] text-[#ffaa00] bg-[#ffaa00]/10' : 'border-white/10 text-white/35'}`}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+
+        {active === 'overview' && (
+          <DemoPanel title="SYSTEM STATUS" action="REFRESH" loading={loadingKey === 'overview'}
+            onRun={() => runAction('overview', '/demo/overview')}>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {[
+                ['Farmers', overview?.stats?.farmers],
+                ['Buyers', overview?.stats?.buyers],
+                ['Live Deals', overview?.stats?.live_negotiations],
+                ['Waste Saved', `${overview?.stats?.waste_saved_kg || 0}kg`],
+              ].map(([label, value]) => (
+                <Metric key={label} label={label} value={value || '--'} />
+              ))}
+            </div>
+            <FeedList items={overview?.live_feed || []} />
+          </DemoPanel>
+        )}
+
+        {active === 'farmer' && (
+          <DemoPanel title="FARMER REGISTRATION + PASSPORT" action="RUN ONBOARDING" loading={loadingKey === 'farmer'}
+            onRun={() => runAction('farmer', '/demo/farmers/register', { name: 'Lakshmi Devi', village: 'Shabad', organic_certified: true, land_verified: true })}>
+            <FarmerOutput data={outputs.farmer?.farmer} />
+          </DemoPanel>
+        )}
+
+        {active === 'buyer' && (
+          <DemoPanel title="BUYER DEMAND REQUEST" action="CREATE REQUEST" loading={loadingKey === 'buyer'}
+            onRun={() => runAction('buyer', '/demo/buyers/request', { buyer: 'FreshMart Wholesale', crop: 'Tomatoes', quantity_kg: 5000, budget_per_kg: 28 })}>
+            <BuyerOutput data={outputs.buyer?.request} />
+          </DemoPanel>
+        )}
+
+        {active === 'semantic' && (
+          <DemoPanel title="SEMANTIC INTELLIGENCE" action="RUN SEARCH" loading={loadingKey === 'semantic'}
+            onRun={() => runAction('semantic', '/demo/semantic/search', { query: 'fresh premium tomatoes' })}>
+            <p className="text-white/45 text-xs leading-relaxed mb-3">{outputs.semantic?.interpretation || 'Search understands crop meaning, not just exact keywords.'}</p>
+            <RankList items={(outputs.semantic?.matches || []).map(m => `${Math.round(m.similarity * 100)}% ${m.listing} - ${m.farmer}`)} />
+          </DemoPanel>
+        )}
+
+        {active === 'aggregation' && (
+          <DemoPanel title="MULTI-FARMER AGGREGATION" action="RUN AGENT" loading={loadingKey === 'aggregation'}
+            onRun={() => runAction('aggregation', '/demo/aggregation/run', { crop: 'Tomatoes', quantity_kg: 5000 })}>
+            <AggregationOutput data={outputs.aggregation?.aggregation} />
+          </DemoPanel>
+        )}
+
+        {active === 'logistics' && (
+          <DemoPanel title="LOGISTICS OPTIMIZATION" action="OPTIMIZE" loading={loadingKey === 'logistics'}
+            onRun={() => runAction('logistics', '/demo/logistics/optimize', {})}>
+            <LogisticsOutput data={outputs.logistics?.logistics} />
+          </DemoPanel>
+        )}
+
+        {active === 'redistribution' && (
+          <DemoPanel title="CIRCULAR REDISTRIBUTION" action="PREVENT WASTE" loading={loadingKey === 'redistribution'}
+            onRun={() => runAction('redistribution', '/demo/redistribution/run', { crop: 'Tomatoes', quantity_kg: 320 })}>
+            <RedistributionOutput data={outputs.redistribution?.redistribution} />
+          </DemoPanel>
+        )}
+
+        {active === 'community' && (
+          <DemoPanel title="COOPERATIVE COMMUNITY" action="LOAD FEED" loading={loadingKey === 'community'}
+            onRun={() => runAction('community', '/demo/community/feed')}>
+            <CommunityOutput data={outputs.community} />
+          </DemoPanel>
+        )}
+
+        {active === 'voice' && (
+          <DemoPanel title="VOICE RURAL INTERFACE" action="PARSE VOICE" loading={loadingKey === 'voice'}
+            onRun={() => runAction('voice', '/demo/voice/intent', { transcript: 'I want to sell 500kg tomatoes today' })}>
+            <VoiceOutput data={outputs.voice} />
+          </DemoPanel>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DemoPanel({ title, action, loading, onRun, children }) {
+  return (
+    <div className="border border-white/10 bg-white/[0.02] p-4">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <p className="text-white text-xs tracking-widest">{title}</p>
+        <button onClick={onRun} disabled={loading}
+          className="border border-[#ffaa00]/50 px-3 py-2 text-[10px] tracking-widest text-[#ffaa00] disabled:opacity-40">
+          {loading ? 'RUNNING' : action}
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Metric({ label, value }) {
+  return (
+    <div className="border border-white/10 bg-black/20 p-3">
+      <p className="text-white/30 text-[10px] tracking-widest mb-1">{label}</p>
+      <p className="text-[#00ff88] text-xl font-bold">{value}</p>
+    </div>
+  );
+}
+
+function FeedList({ items }) {
+  return (
+    <div className="space-y-2">
+      {items.map((item, i) => (
+        <div key={i} className="flex gap-2 text-xs">
+          <span className="text-[#ffaa00]/60">{String(i + 1).padStart(2, '0')}</span>
+          <span className="text-white/55">{item}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RankList({ items }) {
+  return items.length ? <FeedList items={items} /> : <p className="text-white/25 text-xs">Tap run to generate results.</p>;
+}
+
+function FarmerOutput({ data }) {
+  if (!data) return <p className="text-white/25 text-xs">Tap run onboarding to create farmer, passport, and local AI agent.</p>;
+  return (
+    <div className="space-y-3">
+      <Metric label={data.name} value={`Score ${data.passport.score}`} />
+      <FeedList items={[
+        `${data.village}, ${data.district}`,
+        `${data.passport.tier} passport with ${data.passport.certifications.join(', ')}`,
+        `Agent deployed with ${data.agent.style} strategy`
+      ]} />
+    </div>
+  );
+}
+
+function BuyerOutput({ data }) {
+  if (!data) return <p className="text-white/25 text-xs">Tap create request to generate buyer demand and ranked matches.</p>;
+  return (
+    <div className="space-y-3">
+      <Metric label={data.buyer} value={`${data.quantity_kg}kg`} />
+      <RankList items={data.semantic_matches.map(m => `${m.score}% ${m.farmer} - ${m.quantity_kg}kg at Rs ${m.price_per_kg}/kg`)} />
+    </div>
+  );
+}
+
+function AggregationOutput({ data }) {
+  if (!data) return <p className="text-white/25 text-xs">Tap run agent to pool farmers for a large buyer order.</p>;
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <Metric label="Aggregated" value={`${data.total_aggregated}kg`} />
+        <Metric label="Pooled Price" value={`Rs ${data.combined_price}`} />
+      </div>
+      <p className="text-white/45 text-xs leading-relaxed">{data.plan}</p>
+      <RankList items={data.farmers_selected.map(f => `${f.farmer} - ${f.quantity_kg}kg - passport ${f.passport_score}`)} />
+    </div>
+  );
+}
+
+function LogisticsOutput({ data }) {
+  if (!data) return <p className="text-white/25 text-xs">Tap optimize to generate shared pickup route.</p>;
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <Metric label="Route Score" value={data.route_score} />
+        <Metric label="Savings" value={`Rs ${data.shared_savings}`} />
+      </div>
+      <FeedList items={[`Route: ${data.route.join(' -> ')}`, `Pickup: ${data.pickup_window}`, `Spoilage risk: ${data.spoilage_risk}`]} />
+    </div>
+  );
+}
+
+function RedistributionOutput({ data }) {
+  if (!data) return <p className="text-white/25 text-xs">Tap prevent waste to redirect unsold produce.</p>;
+  return (
+    <div className="space-y-3">
+      <Metric label="Waste Prevented" value={`${data.waste_prevented_percent}%`} />
+      <RankList items={data.options.map(o => `${o.channel}: ${o.quantity_kg}kg - ${o.impact}`)} />
+    </div>
+  );
+}
+
+function CommunityOutput({ data }) {
+  if (!data?.success) return <p className="text-white/25 text-xs">Tap load feed to show cooperative coordination.</p>;
+  return (
+    <div className="space-y-3">
+      <RankList items={data.groups.map(g => `${g.name}: ${g.farmers} farmers, ${g.active_supply_kg}kg, trust ${g.trust_score}`)} />
+      <FeedList items={data.feed} />
+    </div>
+  );
+}
+
+function VoiceOutput({ data }) {
+  if (!data?.success) return <p className="text-white/25 text-xs">Tap parse voice to convert farmer speech into a listing.</p>;
+  return (
+    <div className="space-y-3">
+      <p className="text-white/50 text-xs">{data.transcript}</p>
+      <Metric label="Intent" value={data.intent.replace('_', ' ')} />
+      <FeedList items={[
+        `${data.structured_listing.quantity_kg}kg ${data.structured_listing.crop_name}`,
+        `Expected Rs ${data.structured_listing.expected_price_per_kg}/kg in ${data.structured_listing.location}`,
+        data.spoken_response
+      ]} />
+    </div>
   );
 }
 
