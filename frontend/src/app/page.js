@@ -92,17 +92,16 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0f0a] max-w-md mx-auto relative overflow-hidden">
+    <div className="app-shell min-h-screen bg-[#f5f7f0] max-w-md mx-auto relative overflow-hidden">
       {/* Grid bg */}
-      <div className="fixed inset-0 opacity-[0.02] pointer-events-none"
-        style={{ backgroundImage: 'linear-gradient(#00ff88 1px, transparent 1px), linear-gradient(90deg, #00ff88 1px, transparent 1px)', backgroundSize: '30px 30px' }} />
+      <div className="fixed inset-0 pointer-events-none app-background" />
 
       <div className="relative z-10 min-h-screen flex flex-col">
         {screens[screen]}
       </div>
 
       {/* Bottom Nav */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md border-t border-white/10 bg-[#0a0f0a]/95 backdrop-blur px-6 py-3 flex justify-around z-50">
+      <nav className="app-nav fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md border-t border-white/10 bg-[#0a0f0a]/95 backdrop-blur px-4 py-3 flex justify-around z-50">
         {[
           { id: 'dashboard', icon: '⊞', label: 'Dashboard' },
           { id: 'listing', icon: '＋', label: 'List Crop' },
