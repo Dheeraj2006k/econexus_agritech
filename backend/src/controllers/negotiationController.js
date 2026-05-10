@@ -1,6 +1,82 @@
 const supabase = require('../db/supabase');
 const { callAI } = require('../utils/aiClient');
 
+// POST /api/negotiations/offer
+const createBuyerOffer = async (req, res) => {
+  try {
+    const { listing_id, buyer_id, offer_price } = req.body;
+
+    if (!listing_id || !buyer_id || !offer_price) {
+      return res.status(400).json({ error: 'listing_id, buyer_id and offer_price are required' });
+    }
+
+    const price = parseFloat(offer_price);
+    if (!Number.isFinite(price) || price <= 0) {
+      return res.status(400).json({ error: 'Offer price must be a positive number' });
+    }
+
+    const { data: listing, error: listingError } = await supabase
+      .from('listings')
+      .select('*')
+      .eq('id', listing_id)
+      .eq('status', 'active')
+      .single();
+
+    if (listingError || !listing) {
+      return res.status(404).json({ error: 'Active listing not found' });
+    }
+
+    const { data: buyer, error: buyerError } = await supabase
+      .from('buyers')
+      .select('id, business_name, status')
+      .eq('id', buyer_id)
+      .eq('status', 'active')
+      .single();
+
+    if (buyerError || !buyer) {
+      return res.status(404).json({ error: 'Active buyer not found' });
+    }
+
+    const { data: negotiation, error } = await supabase
+      .from('negotiations')
+      .insert([{
+        listing_id: listing.id,
+        farmer_id: listing.farmer_id,
+        buyer_id: buyer.id,
+        initial_farmer_price: listing.expected_price_per_kg,
+        initial_buyer_offer: price,
+        current_offer: price,
+        round_number: 1,
+        status: 'buyer_offered',
+        messages: {
+          round_1: {
+            role: 'buyer_agent',
+            content: `${buyer.business_name} offered ₹${price}/kg for ${listing.crop_name}.`,
+            buyer_offer: price,
+            timestamp: new Date().toISOString()
+          }
+        }
+      }])
+      .select('id')
+      .single();
+
+    if (error) throw error;
+
+    return res.status(201).json({
+      message: 'Buyer offer submitted. AI negotiation can now begin.',
+      negotiation_id: negotiation.id,
+      listing_id: listing.id,
+      buyer_id: buyer.id,
+      offer_price: price,
+      status: 'buyer_offered'
+    });
+
+  } catch (err) {
+    console.error('Buyer offer error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 // POST /api/negotiations/negotiate
 const runNegotiation = async (req, res) => {
   try {
@@ -42,9 +118,8 @@ const runNegotiation = async (req, res) => {
       .eq('id', negotiation.farmer_id)
       .single();
 
-    // Simulate buyer's initial offer (15-20% below farmer's price)
     const farmerPrice = parseFloat(negotiation.initial_farmer_price);
-    const buyerOffer = parseFloat((farmerPrice * 0.82).toFixed(2));
+    const buyerOffer = parseFloat(Number(negotiation.initial_buyer_offer || farmerPrice * 0.82).toFixed(2));
 
     // Build AI prompt
     const prompt = `
@@ -109,7 +184,9 @@ Respond ONLY in this exact JSON format, no extra text:
         round_number: 1,
         status: aiResult.recommendation === 'accept' ? 'ai_suggested' : 'negotiating',
         messages: {
+          ...(negotiation.messages || {}),
           round_1: {
+            ...(negotiation.messages?.round_1 || {}),
             farmer_price: farmerPrice,
             buyer_offer: buyerOffer,
             ai_suggestion: aiResult.suggested_price,
@@ -218,4 +295,4 @@ const getNegotiationStatus = async (req, res) => {
   }
 };
 
-module.exports = { runNegotiation, getNegotiationStatus };
+module.exports = { createBuyerOffer, runNegotiation, getNegotiationStatus };
