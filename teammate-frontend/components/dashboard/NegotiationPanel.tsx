@@ -43,7 +43,7 @@ const AGENT_LABELS: Record<string, string> = {
   farmer_agent: '🌾 Farmer Agent',
   buyer_agent: '🏪 Buyer Agent',
   super_agent: '🤖 Super Agent',
-  ai: '✨ Gemini AI',
+  ai: '🤖 AI Agent',
   system: '⚙️ System',
 };
 
