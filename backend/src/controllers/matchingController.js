@@ -50,10 +50,11 @@ const findMatchingBuyers = async (req, res) => {
       .sort((a, b) => b.match_score - a.match_score);
 
     // Save matches to negotiations table as pending
+    let negotiation = null;
     if (matchedBuyers.length > 0) {
       const topBuyer = matchedBuyers[0];
 
-      const { error: negotiationError } = await supabase
+      const { data: createdNegotiation, error: negotiationError } = await supabase
         .from('negotiations')
         .insert([{
           listing_id: listing.id,
@@ -61,9 +62,12 @@ const findMatchingBuyers = async (req, res) => {
           buyer_id: topBuyer.id,
           initial_farmer_price: listing.expected_price_per_kg,
           status: 'pending'
-        }]);
+        }])
+        .select('id')
+        .single();
 
       if (negotiationError) throw negotiationError;
+      negotiation = createdNegotiation;
     }
 
     return res.status(200).json({
@@ -77,6 +81,7 @@ const findMatchingBuyers = async (req, res) => {
       },
       matched_buyers: matchedBuyers,
       top_match: matchedBuyers[0] || null,
+      negotiation_id: negotiation?.id || null,
       negotiation_initiated: matchedBuyers.length > 0
     });
 

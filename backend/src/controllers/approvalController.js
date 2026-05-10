@@ -1,5 +1,78 @@
 const supabase = require('../db/supabase');
 
+const getApprovalContext = async (req, res) => {
+  try {
+    const { negotiation_id } = req.params;
+
+    if (!negotiation_id) {
+      return res.status(400).json({ error: 'negotiation_id is required' });
+    }
+
+    const { data: negotiation, error: negError } = await supabase
+      .from('negotiations')
+      .select('*')
+      .eq('id', negotiation_id)
+      .single();
+
+    if (negError || !negotiation) {
+      return res.status(404).json({ error: 'Negotiation not found' });
+    }
+
+    const [{ data: listing }, { data: farmer }, { data: buyer }, { data: farmerPassport }] = await Promise.all([
+      supabase.from('listings').select('*').eq('id', negotiation.listing_id).single(),
+      supabase.from('farmers').select('*').eq('id', negotiation.farmer_id).single(),
+      supabase.from('buyers').select('*').eq('id', negotiation.buyer_id).single(),
+      supabase.from('passports').select('*').eq('farmer_id', negotiation.farmer_id).single()
+    ]);
+
+    const farmerScore = farmerPassport?.trust_score || farmerPassport?.genuinity_score || 50;
+    const buyerScore = buyer?.passport_score || 50;
+    const farmerPrice = Number(negotiation.initial_farmer_price || listing?.expected_price_per_kg || 0);
+    const buyerOffer = Number(negotiation.initial_buyer_offer || negotiation.current_offer || 0);
+    const aiPrice = Number(negotiation.ai_suggested_price || negotiation.current_offer || farmerPrice);
+    const priceGap = farmerPrice && buyerOffer ? Math.round(((farmerPrice - buyerOffer) / farmerPrice) * 100) : 0;
+    const passportRank = Math.round((farmerScore * 0.45) + (buyerScore * 0.45) + ((listing?.urgency_score || 50) * 0.10));
+
+    return res.status(200).json({
+      success: true,
+      negotiation,
+      listing,
+      farmer,
+      buyer,
+      passports: {
+        farmer: {
+          score: farmerScore,
+          tier: farmerScore >= 85 ? 'Gold' : farmerScore >= 70 ? 'Silver' : 'Bronze',
+          genuinity_score: farmerPassport?.genuinity_score || farmerScore,
+          quality_verified: Boolean(farmerPassport?.quality_verified),
+          organic_certified: Boolean(farmerPassport?.organic_certified),
+          certifications: farmerPassport?.certifications || []
+        },
+        buyer: {
+          score: buyerScore,
+          tier: buyer?.passport_tier || (buyerScore >= 85 ? 'Gold' : buyerScore >= 70 ? 'Silver' : 'Bronze'),
+          status: buyer?.status || 'active',
+          business_type: buyer?.business_type,
+          preferred_crops: buyer?.preferred_crops || []
+        }
+      },
+      ai_rank: {
+        score: Math.min(100, passportRank),
+        recommendation: passportRank >= 75 && priceGap <= 25 ? 'approve' : 'review',
+        reasons: [
+          `Farmer passport ${farmerScore}/100`,
+          `Buyer passport ${buyerScore}/100`,
+          `Price gap ${Math.max(0, priceGap)}% before AI suggestion`,
+          `AI suggested Rs ${aiPrice}/kg`
+        ]
+      }
+    });
+  } catch (err) {
+    console.error('Approval context error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 // POST /api/approval/decide
 const approvalDecision = async (req, res) => {
   try {
@@ -152,4 +225,77 @@ const approvalDecision = async (req, res) => {
   }
 };
 
-module.exports = { approvalDecision };
+// POST /api/approval/counter
+const counterOffer = async (req, res) => {
+  try {
+    const { negotiation_id, counter_price, offered_by } = req.body;
+
+    if (!negotiation_id || !counter_price || !offered_by) {
+      return res.status(400).json({ error: 'negotiation_id, counter_price and offered_by required' });
+    }
+
+    if (!['farmer', 'buyer'].includes(offered_by)) {
+      return res.status(400).json({ error: 'offered_by must be farmer or buyer' });
+    }
+
+    const { data: neg, error } = await supabase
+      .from('negotiations')
+      .select('*')
+      .eq('id', negotiation_id)
+      .single();
+
+    if (error || !neg) {
+      return res.status(404).json({ error: 'Negotiation not found' });
+    }
+
+    const price = parseFloat(counter_price);
+    const farmerPrice = parseFloat(neg.initial_farmer_price);
+    const aiPrice = parseFloat(neg.ai_suggested_price || farmerPrice);
+
+    if (price <= 0) {
+      return res.status(400).json({ error: 'Counter price must be positive' });
+    }
+
+    const existingMessages = neg.messages || {};
+    const round = (neg.round_number || 1) + 1;
+    const roundKey = `round_${round}`;
+    const updatedMessages = {
+      ...existingMessages,
+      [roundKey]: {
+        offered_by,
+        counter_price: price,
+        previous_ai_suggestion: aiPrice,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    const { error: updateError } = await supabase
+      .from('negotiations')
+      .update({
+        current_offer: price,
+        round_number: round,
+        status: 'negotiating',
+        messages: updatedMessages,
+        ...(offered_by === 'buyer' ? { initial_buyer_offer: price } : {})
+      })
+      .eq('id', negotiation_id);
+
+    if (updateError) throw updateError;
+
+    return res.status(200).json({
+      message: `Counter offer submitted by ${offered_by}`,
+      negotiation_id,
+      offered_by,
+      counter_price: price,
+      round,
+      status: 'negotiating',
+      next: 'Run AI negotiation again to get updated fair price'
+    });
+
+  } catch (err) {
+    console.error('Counter offer error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+module.exports = { approvalDecision, getApprovalContext, counterOffer };

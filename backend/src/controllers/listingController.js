@@ -1,5 +1,21 @@
 const supabase = require('../db/supabase');
 
+const APPROVED_FARMER_STATUSES = new Set(['approved', 'active']);
+const QUALITY_GRADES = new Set(['A', 'B', 'C']);
+
+const normalizeQualityGrade = (grade) => {
+  if (!grade) return 'A';
+  const normalized = String(grade).replace(/^grade\s+/i, '').trim().toUpperCase();
+  return QUALITY_GRADES.has(normalized) ? normalized : 'A';
+};
+
+const calculateUrgencyScore = (expiryDays) => {
+  if (expiryDays <= 2) return 100;
+  if (expiryDays <= 5) return 80;
+  if (expiryDays <= 10) return 50;
+  return 20;
+};
+
 // POST /api/listings/create
 const createListing = async (req, res) => {
   try {
@@ -28,7 +44,7 @@ const createListing = async (req, res) => {
     // Verify farmer exists
     const { data: farmer, error: farmerError } = await supabase
       .from('farmers')
-      .select('id, name')
+      .select('id, name, village, district')
       .eq('id', farmer_id)
       .single();
 
@@ -43,16 +59,12 @@ const createListing = async (req, res) => {
       .eq('farmer_id', farmer_id)
       .single();
 
-    if (statusError || !farmerStatus || farmerStatus.status !== 'approved') {
+    if (statusError || !farmerStatus || !APPROVED_FARMER_STATUSES.has(farmerStatus.status)) {
       return res.status(403).json({ error: 'Farmer not approved yet' });
     }
 
-    // Calculate urgency score based on expiry days
-    let urgency_score = 0;
-    if (expiry_days <= 2) urgency_score = 100;
-    else if (expiry_days <= 5) urgency_score = 80;
-    else if (expiry_days <= 10) urgency_score = 50;
-    else urgency_score = 20;
+    const normalizedExpiryDays = Number(expiry_days) || 7;
+    const urgency_score = calculateUrgencyScore(normalizedExpiryDays);
 
     // Create listing
     const { data: listing, error } = await supabase
@@ -62,14 +74,14 @@ const createListing = async (req, res) => {
         crop_name,
         crop_category: crop_category || 'general',
         quantity_kg,
-        quality_grade: quality_grade || 'A',
+        quality_grade: normalizeQualityGrade(quality_grade),
         expected_price_per_kg,
         is_organic: is_organic || false,
         harvest_date: harvest_date || null,
-        expiry_days: expiry_days || 7,
+        expiry_days: normalizedExpiryDays,
         urgency_score,
-        location_village: location_village || null,
-        location_district: location_district || null,
+        location_village: location_village || farmer.village,
+        location_district: location_district || farmer.district,
         location_lat: location_lat || null,
         location_lng: location_lng || null,
         description: description || null,

@@ -148,4 +148,74 @@ Respond ONLY in this exact JSON format, no extra text:
   }
 };
 
-module.exports = { runNegotiation };
+// GET /api/negotiations/:id/status
+const getNegotiationStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const { data: neg, error } = await supabase
+      .from('negotiations')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error || !neg) {
+      return res.status(404).json({ error: 'Negotiation not found' });
+    }
+
+    const { data: listing } = await supabase
+      .from('listings')
+      .select('crop_name, quantity_kg, urgency_score')
+      .eq('id', neg.listing_id)
+      .single();
+
+    const { data: farmer } = await supabase
+      .from('farmers')
+      .select('id, name')
+      .eq('id', neg.farmer_id)
+      .single();
+
+    const { data: buyer } = await supabase
+      .from('buyers')
+      .select('id, name, business_name, passport_score, passport_tier')
+      .eq('id', neg.buyer_id)
+      .single();
+
+    return res.status(200).json({
+      negotiation_id: neg.id,
+      status: neg.status,
+      round: neg.round_number || 0,
+      crop: listing?.crop_name,
+      quantity_kg: listing?.quantity_kg,
+      urgency_score: listing?.urgency_score,
+      farmer: {
+        id: farmer?.id,
+        name: farmer?.name,
+        expected_price: neg.initial_farmer_price
+      },
+      buyer: {
+        id: buyer?.id,
+        name: buyer?.name,
+        business_name: buyer?.business_name,
+        passport_score: buyer?.passport_score,
+        passport_tier: buyer?.passport_tier,
+        offer: neg.initial_buyer_offer
+      },
+      pricing: {
+        farmer_expected: neg.initial_farmer_price,
+        buyer_offered: neg.initial_buyer_offer,
+        ai_suggested: neg.ai_suggested_price,
+        current: neg.current_offer
+      },
+      messages: neg.messages,
+      created_at: neg.created_at,
+      updated_at: neg.updated_at
+    });
+
+  } catch (err) {
+    console.error('Negotiation status error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+module.exports = { runNegotiation, getNegotiationStatus };
